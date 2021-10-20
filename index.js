@@ -52,12 +52,14 @@ io.on("connection", socket => {
 		);
 
 		usersInThisRoom.map(user => {
-			io.sockets.to(user.id).emit("new_user", {
-				id: socket.id, 
-				number: users[data.room][targetUserIndex].number, 
-				nickname: data.nickname, 
-				money: data.money
-			})
+			if (user) {
+				io.sockets.to(user.id).emit("new_user", {
+					id: socket.id, 
+					number: users[data.room][targetUserIndex].number, 
+					nickname: data.nickname, 
+					money: data.money
+				})
+			}
 		})
 
 		io.sockets.to(socket.id).emit("all_users", {
