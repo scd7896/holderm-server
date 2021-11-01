@@ -17,75 +17,69 @@ app.set("socket", io);
 
 const users = {};
 const socketToRoom = {};
-const maximum = 7;
+const maximum = 5;
+const room = {};
 
 io.on("connection", socket => {
 	socket.on("join_room", data => {
-		console.log("room", users[data.room])
-		if (users[data.room]) {
-			const length = users[data.room].length;
-			let index = 0;
-			for (let i = 0; i < maximum; i++) {
-				if (!users[data.room][i]) {
-					index = i;
-					break;
+		console.log("room", room[data.room])
+		const payload = data.payload || {};
+		payload.socketId = socket.id;
+		if (room[data.room]) {
+			const index = room[data.room].users.findIndex((user) => user.socketId || payload.socketId)
+			const isRejoin = index !== -1;
+			if (isRejoin) {
+				room[data.room].users[index].join = true;
+			} else {
+				const length = room[data.room].users.length;
+				if (length >= maximum) {
+					socket.to(socket.id).emit("room_full");
+					return;
 				}
+				payload.join = true;
+				room[data.room].users.push(payload)
 			}
-
-			if (length >= maximum) {
-				socket.to(socket.id).emit("room_full");
-				return;
-			}
-			users[data.room][index] = { id: socket.id, number: index, nickname: data.nickname, money: data.money };
 		} else {
-			users[data.room] = [{ id: socket.id, number: 0, nickname: data.nickname, money: data.money }]
+			room[data.room] = {
+				status: 1,
+				users: [payload]
+			}
 		}
 		socketToRoom[socket.id] = data.room;
 		socket.join(data.room);
 
-		const usersInThisRoom = users[data.room].filter(
-				user => user?.id !== socket.id
-		);
-
-		const targetUserIndex = users[data.room].findIndex(
-			user => user?.id === socket.id
+		const usersInThisRoom = room[data.room].users.filter(
+				user => user?.socketId !== socket.id
 		);
 
 		usersInThisRoom.map(user => {
 			if (user) {
-				io.sockets.to(user.id).emit("new_user", {
-					id: socket.id, 
-					number: users[data.room][targetUserIndex].number, 
-					nickname: data.nickname, 
-					money: data.money
+				io.sockets.to(user.socketId).emit("newUser", {
+					socketId: socket.id,
+					payload
 				})
 			}
 		})
 
-		io.sockets.to(socket.id).emit("all_users", {
-				users: usersInThisRoom, 
-				you: { 
-					id: socket.id, 
-					number: users[data.room][targetUserIndex].number, 
-					nickname: data.nickname, 
-					money: data.money
-				}
+		io.sockets.to(socket.id).emit("getAllUser", {
+				users: room[data.room].users, 
+				you: payload
 			}
 		);
 	})
 
-	socket.on("offer", ({ sdp, toSocketId, number, user }) => {
+	socket.on("offer", ({ sdp, toSocketId, payload }) => {
 		
-		io.sockets.to(toSocketId).emit("getOffer", { sdp, fromSocketId: socket.id, number, user });
+		io.sockets.to(toSocketId).emit("getOffer", { sdp, fromSocketId: socket.id, payload });
 	});
 
-	socket.on("answer", ({ sdp, toSocketId, number, user }) => { 
-		io.sockets.to(toSocketId).emit("getAnswer", { sdp, fromSocketId: socket.id, number, user });
+	socket.on("answer", ({ sdp, toSocketId, payload }) => { 
+		io.sockets.to(toSocketId).emit("getAnswer", { sdp, fromSocketId: socket.id, payload });
 	});
 
 	
-	socket.on("candidate", ({ candidate, toSocketId, number }) => {
-			io.sockets.to(toSocketId).emit("getCandidate", { number, candidate, fromSocketId: socket.id, toSocketId })
+	socket.on("candidate", ({ candidate, toSocketId, payload }) => {
+			io.sockets.to(toSocketId).emit("getCandidate", { payload, candidate, fromSocketId: socket.id, toSocketId })
 			
 	});
 
@@ -94,18 +88,24 @@ io.on("connection", socket => {
 	
 			const roomID = socketToRoom[socket.id];
 	
-			let room = users[roomID];
+			let targetRoom = room[roomID];
 	
-			if (room) {
+			if (targetRoom) {
 	
-					const index = room.findIndex(user => user?.id === socket.id);
+					const index = targetRoom.users.findIndex(user => user?.socketId === socket.id);
 					if (index >= 0) {
-						room[index] = null
+						targetRoom.users[index].join = false
 					}
-					users[roomID] = room;
+
+					const isAllUserLeft = targetRoom.users.reduce((acc, user) => acc || user.join, false);
+
+					if (isAllUserLeft) {
+						targetRoom = null;
+					} else {
+						targetRoom.users.map(user => io.sockets.to(user.socketId).emit("disconnect", { socketId: socket.id }))
+					}
 			}
 			
-			socket.broadcast.to(room).emit("user_exit", { id: socket.id });
 	});
 
 })
