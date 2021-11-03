@@ -22,22 +22,23 @@ const room = {};
 
 io.on("connection", socket => {
 	socket.on("join_room", data => {
-		console.log("room", room[data.room])
 		const payload = data.payload || {};
 		payload.socketId = socket.id;
+		payload.join = true;
 		if (room[data.room]) {
-			const index = room[data.room].users.findIndex((user) => user.socketId || payload.socketId)
+			const index = room[data.room].users.findIndex((user) => user.id === payload.id)
 			const isRejoin = index !== -1;
 			if (isRejoin) {
-				room[data.room].users[index].join = true;
+				room[data.room].users[index] = payload;
 			} else {
 				const length = room[data.room].users.length;
 				if (length >= maximum) {
 					socket.to(socket.id).emit("room_full");
 					return;
 				}
-				payload.join = true;
+				
 				room[data.room].users.push(payload)
+				console.log("joiinnn", room[data.room])
 			}
 		} else {
 			room[data.room] = {
@@ -66,6 +67,7 @@ io.on("connection", socket => {
 				you: payload
 			}
 		);
+		console.log("room", room[data.room])
 	})
 
 	socket.on("offer", ({ sdp, toSocketId, payload }) => {
@@ -85,27 +87,26 @@ io.on("connection", socket => {
 
 	// user가 연결이 끊겼을 때 처리
 	socket.on("disconnect", () => {
-	
-			const roomID = socketToRoom[socket.id];
-	
-			let targetRoom = room[roomID];
-	
-			if (targetRoom) {
-	
-					const index = targetRoom.users.findIndex(user => user?.socketId === socket.id);
-					if (index >= 0) {
-						targetRoom.users[index].join = false
-					}
+		const roomID = socketToRoom[socket.id];
+		
+		let targetRoom = room[roomID];
 
-					const isAllUserLeft = targetRoom.users.reduce((acc, user) => acc || user.join, false);
+		if (targetRoom) {
 
-					if (isAllUserLeft) {
-						targetRoom = null;
-					} else {
-						targetRoom.users.map(user => io.sockets.to(user.socketId).emit("disconnect", { socketId: socket.id }))
-					}
-			}
-			
+				const index = targetRoom.users.findIndex(user => user?.socketId === socket.id);
+				if (index >= 0) {
+					targetRoom.users[index].join = false
+				}
+
+				const isAllUserLeft = targetRoom.users.reduce((acc, user) => acc || user.join, false);
+
+				if (isAllUserLeft) {
+					targetRoom = null;
+				} else {
+					targetRoom.users.map(user => io.sockets.to(user.socketId).emit("exit", { socketId: socket.id }))
+				}
+		}
+		console.log(targetRoom)	
 	});
 
 })
