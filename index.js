@@ -98,15 +98,19 @@ io.on("connection", socket => {
 					targetRoom.users[index].join = false
 				}
 
-				const isAllUserLeft = targetRoom.users.reduce((acc, user) => acc || user.join, false);
+				const isAllUserLeft = !targetRoom.users.reduce((acc, user) => acc || user.join, false);
 
+				console.log(isAllUserLeft)
 				if (isAllUserLeft) {
 					targetRoom = null;
 				} else {
-					targetRoom.users.map(user => io.sockets.to(user.socketId).emit("exit", { socketId: socket.id }))
+					console.log("룸의 유저들", targetRoom)
+					targetRoom.users.map(user => {
+						if (user.join) io.sockets.to(user.socketId).emit("user_disconnect", targetRoom.users[index])
+					})
 				}
 		}
-		console.log(targetRoom)	
+		console.log("afterDisconnect",targetRoom)	
 	});
 
 })
